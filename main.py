@@ -16,15 +16,19 @@ from mss import mss
 import time
 import sys
 from PIL import ImageGrab
+import tkinter.ttk as ttk
 
 
 class TransparentCaptureWindow:
     def __init__(self):
+        # Initialize root window
+        self.root = tk.Tk()
+        self.root.title("Screen Capture")
+
         # Check for API key
         self.api_key = os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
             print("Warning: ANTHROPIC_API_KEY not found in .env file")
-            # You might want to show this in a popup
             popup = tk.Toplevel(self.root)
             popup.title("API Key Required")
             msg = """
@@ -43,82 +47,62 @@ Please:
             # Initialize Claude client
             self.claude = anthropic.Anthropic(api_key=self.api_key)
 
-        self.root = tk.Tk()
-        self.root.title("Screen Capture")
-
-        # Check for screen recording permission
-        try:
-            with mss() as sct:
-                test = sct.grab(sct.monitors[0])
-                print("Screen recording permission granted")
-        except Exception as e:
-            print("Screen recording permission needed")
-            popup = tk.Toplevel(self.root)
-            popup.title("Permission Required")
-            msg = """
-Screen recording permission is required.
-
-Please follow these steps:
-1. Open System Settings
-2. Go to Privacy & Security
-3. Scroll to Screen Recording
-4. Enable permission for Terminal or VS Code
-5. Restart the application
-            """
-            label = tk.Label(popup, text=msg, padx=20, pady=20)
-            label.pack()
-            button = tk.Button(popup, text="OK", command=popup.destroy)
-            button.pack(pady=10)
-
-        # Create screenshots directory at startup
-        try:
-            os.makedirs("screenshots", exist_ok=True)
-            print(f"Screenshots will be saved to: {os.path.abspath('screenshots')}")
-        except Exception as e:
-            print(f"Error creating screenshots directory: {e}")
-
-        # Make window transparent and set minimum size
-        self.root.attributes("-alpha", 0.3)
+        # Set window attributes for visibility
+        self.root.attributes("-alpha", 0.8)  # Less transparent for better visibility
         self.root.attributes("-topmost", True)
-        self.root.minsize(300, 200)
+        self.root.configure(bg="#2C2C2C")  # Dark background for contrast
 
-        # Bind Escape key to quit
-        self.root.bind("<Escape>", lambda e: self.quit_app())
-
-        # Create main container with padding
+        # Create a container frame with a visible border
         self.container = tk.Frame(
             self.root,
-            padx=10,
-            pady=10,
+            bg="#FF5500",  # Bright orange border
+            padx=5,
+            pady=5,
         )
         self.container.pack(fill="both", expand=True)
 
-        # Create capture frame with visible styling
+        # Create the main frame inside the container
         self.frame = tk.Frame(
             self.container,
-            highlightbackground="#FF0000",
-            highlightthickness=3,
+            bg="#202020",
             relief="ridge",
             borderwidth=2,
-            bg="#202020",
         )
-        self.frame.pack(fill="both", expand=True, padx=5, pady=5)
+        self.frame.pack(fill="both", expand=True)
+
+        # Add the draggable label
+        self.drag_label = tk.Label(
+            self.frame,
+            text="← Drag to move → (ESC to quit)",
+            bg="#202020",
+            fg="#FFFFFF",
+            font=("Arial", 12, "bold"),
+        )
+        self.drag_label.pack(pady=20)
 
         # Create button container
-        self.button_frame = tk.Frame(self.container)
+        self.button_frame = tk.Frame(
+            self.frame,
+            bg="#202020",
+        )
         self.button_frame.pack(side="bottom", pady=10)
+
+        # Button styling
+        button_style = {
+            "bg": "#FF5500",  # Match border color
+            "fg": "white",
+            "relief": "raised",
+            "padx": 20,
+            "pady": 5,
+            "font": ("Arial", 12, "bold"),
+        }
 
         # Add capture button
         self.capture_btn = tk.Button(
             self.button_frame,
             text="Capture",
             command=self.capture_screen,
-            bg="#404040",
-            fg="white",
-            relief="raised",
-            padx=20,
-            pady=5,
-            font=("Arial", 12, "bold"),
+            **button_style,
         )
         self.capture_btn.pack(side="left", padx=5)
 
@@ -127,27 +111,9 @@ Please follow these steps:
             self.button_frame,
             text="Quit",
             command=self.quit_app,
-            bg="#404040",
-            fg="white",
-            relief="raised",
-            padx=20,
-            pady=5,
-            font=("Arial", 12, "bold"),
+            **button_style,
         )
         self.quit_btn.pack(side="left", padx=5)
-
-        # Add a label to show it's draggable
-        self.drag_label = tk.Label(
-            self.frame,
-            text="← Drag to move → (ESC to quit)",
-            bg="#202020",
-            fg="#808080",
-            font=("Arial", 10),
-        )
-        self.drag_label.pack(pady=20)
-
-        # Initialize screen capture
-        self.sct = mss()
 
         # Initialize position variables
         self.x = 0
@@ -156,6 +122,9 @@ Please follow these steps:
         # Bind mouse events for dragging
         self.frame.bind("<Button-1>", self.start_move)
         self.frame.bind("<B1-Motion>", self.on_move)
+
+        # Bind Escape key to quit
+        self.root.bind("<Escape>", lambda e: self.quit_app())
 
     def start_move(self, event):
         self.x = event.x
@@ -169,6 +138,10 @@ Please follow these steps:
         self.root.geometry(f"+{x}+{y}")
 
     def analyze_with_claude(self, image_path):
+        if not hasattr(self, "claude"):
+            print("Claude client not initialized.")
+            return None
+
         try:
             # Open and prepare the image
             with open(image_path, "rb") as img_file:
@@ -217,7 +190,6 @@ Please follow these steps:
             # Ensure screenshots directory exists
             screenshots_dir = os.path.join(os.getcwd(), "screenshots")
             os.makedirs(screenshots_dir, exist_ok=True)
-            print("Screenshots directory confirmed")
 
             # Get window position and size
             x = self.root.winfo_x()
@@ -227,7 +199,7 @@ Please follow these steps:
 
             print(f"Capture area: x={x}, y={y}, width={width}, height={height}")
 
-            # Withdraw window instead of changing alpha
+            # Hide window
             print("Hiding window...")
             self.root.withdraw()  # This hides the window completely
             self.root.update()
@@ -278,7 +250,6 @@ Please follow these steps:
                 # Show window again
                 print("Restoring window...")
                 self.root.deiconify()  # This brings the window back
-                self.root.attributes("-alpha", 0.3)  # Restore transparency
                 self.root.update()
 
         except Exception as e:
