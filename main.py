@@ -1,4 +1,12 @@
 import os
+from dotenv import load_dotenv
+import anthropic
+from PIL import Image
+import io
+import base64
+
+# Load environment variables from .env file
+load_dotenv()
 
 os.environ["TK_SILENCE_DEPRECATION"] = "1"
 
@@ -7,12 +15,34 @@ from datetime import datetime
 from mss import mss
 import time
 import sys
-from PIL import Image
 from PIL import ImageGrab
 
 
 class TransparentCaptureWindow:
     def __init__(self):
+        # Check for API key
+        self.api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not self.api_key:
+            print("Warning: ANTHROPIC_API_KEY not found in .env file")
+            # You might want to show this in a popup
+            popup = tk.Toplevel(self.root)
+            popup.title("API Key Required")
+            msg = """
+Anthropic API key is required.
+
+Please:
+1. Create a .env file in the project directory
+2. Add your API key: ANTHROPIC_API_KEY=your-key-here
+3. Restart the application
+            """
+            label = tk.Label(popup, text=msg, padx=20, pady=20)
+            label.pack()
+            button = tk.Button(popup, text="OK", command=popup.destroy)
+            button.pack(pady=10)
+        else:
+            # Initialize Claude client
+            self.claude = anthropic.Anthropic(api_key=self.api_key)
+
         self.root = tk.Tk()
         self.root.title("Screen Capture")
 
@@ -138,6 +168,48 @@ Please follow these steps:
         y = self.root.winfo_y() + deltay
         self.root.geometry(f"+{x}+{y}")
 
+    def analyze_with_claude(self, image_path):
+        try:
+            # Open and prepare the image
+            with open(image_path, "rb") as img_file:
+                # Create a message with the image
+                message = self.claude.messages.create(
+                    model="claude-3-opus-20240229",
+                    max_tokens=1024,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Please analyze this screenshot and describe what you see.",
+                                },
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/png",
+                                        "data": base64.b64encode(
+                                            img_file.read()
+                                        ).decode(),
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                )
+
+                # Get Claude's response
+                response = message.content[0].text
+                print("\nClaude's analysis:")
+                print(response)
+
+                return response
+
+        except Exception as e:
+            print(f"Error analyzing with Claude: {str(e)}")
+            return None
+
     def capture_screen(self):
         try:
             print("\nStarting new capture process...")
@@ -196,6 +268,9 @@ Please follow these steps:
                         # Visual feedback
                         self.frame.configure(bg="green")
                         self.root.after(200, lambda: self.frame.configure(bg="#202020"))
+
+                        # Add Claude analysis after successful capture
+                        self.analyze_with_claude(filepath)
                     else:
                         print("Failed to save screenshot - file not created")
 
